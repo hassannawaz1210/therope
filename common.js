@@ -19,7 +19,8 @@ window.Rope = (() => {
 
   // ---- hold-to-pull: fire while pressed, throttled (one finger != a bot army) ----
   let held = null;
-  const pull = () => { if (held) { navigator.sendBeacon("/pull?side=" + held); tick(); } };
+  let sid = "";   // session id issued by /stream; the server rejects pulls without it
+  const pull = () => { if (held && sid) { navigator.sendBeacon("/pull?side=" + held + "&s=" + sid); tick(); } };
   setInterval(pull, 80);
   for (const ev of ["pointerup", "pointercancel"]) addEventListener(ev, () => (held = null));
 
@@ -41,6 +42,7 @@ window.Rope = (() => {
   let lastWins = null;
   function connect(render) {
     const es = new EventSource("/stream");
+    es.addEventListener("session", (e) => { sid = JSON.parse(e.data).id; });
     es.onmessage = (e) => {
       const s = JSON.parse(e.data);
       let winner = null;
