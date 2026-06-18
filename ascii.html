@@ -1,0 +1,107 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>THE ROPE — ascii</title>
+<style>
+  :root { --grn: #33ff66; --blue: #4ea1ff; --red: #ff5d5d; --gold: #ffd23f; }
+  * { box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: #000; color: var(--grn); overflow: hidden;
+    font-family: "Courier New", ui-monospace, monospace; font-weight: 700;
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    text-shadow: 0 0 6px currentColor;
+  }
+  body::after { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 3;
+    background: repeating-linear-gradient(0deg, #0000 0 2px, #00000066 2px 4px); }
+  pre { margin: 0; line-height: 1.45; white-space: pre; }
+  #title { font-size: clamp(16px, 4.5vw, 34px); letter-spacing: .5em; margin-bottom: 4px; }
+  #players { font-size: 12px; color: #1c9c42; margin-bottom: 16px; }
+  #scene { font-size: clamp(8px, 2.1vw, 18px); }
+  #status { margin-top: 16px; font-size: clamp(11px, 2.6vw, 18px); height: 1.4em; }
+  #hint { margin-top: 18px; font-size: 12px; color: #1c9c42; }
+  .b { color: var(--blue); } .r { color: var(--red); } .g { color: var(--gold); }
+  .gate { color: #fff; }
+  .blink { animation: bl .7s steps(1) infinite; } @keyframes bl { 50% { opacity: .25; } }
+  #scene.danger { animation: jit .08s steps(2) infinite; }
+  @keyframes jit { 50% { transform: translateX(2px); } }
+  #pads { position: fixed; inset: 0; display: flex; z-index: 2; }
+  #pads > div { flex: 1; cursor: pointer; }
+  #pads #L:active ~ *, #pads #R:active { } /* no-op, click handled in JS */
+</style>
+
+<pre id="title">[ THE ROPE ]</pre>
+<pre id="players">connecting…</pre>
+<pre id="scene"></pre>
+<pre id="status">&nbsp;</pre>
+<pre id="hint">&lt;&lt;&lt; hold a half  ·  or press ← →  &gt;&gt;&gt;</pre>
+
+<div id="pads"><div id="L"></div><div id="R"></div></div>
+
+<script src="/common.js"></script>
+<script>
+  const COLS = 39;           // rope interior cells (odd = true center)
+  const GATE = 3;            // last N cells each end are the WIN zone
+  const scene = document.getElementById("scene");
+  const status = document.getElementById("status");
+  const players = document.getElementById("players");
+  Rope.bindSides(document.getElementById("L"), document.getElementById("R"));
+  let winUntil = 0, winShown = "";
+
+  // little straining puller faces; they lean harder the more their side leads
+  const puller = (side, lead) => {
+    const hard = lead > 0.45, mid = lead > 0.15;
+    if (side === "left")  return hard ? "o/\\" : mid ? "o/¯" : "o-¯";
+    return hard ? "/\\o" : mid ? "¯\\o" : "¯-o";
+  };
+
+  Rope.connect((s, winner) => {
+    if (!s) { players.textContent = "reconnecting…"; return; }
+    const f = Rope.frac(s.pos);                       // 0..1
+    const knot = Math.round(f * (COLS - 1));
+    const lead = Math.abs(s.pos) / Rope.WIN;          // 0..1 how lopsided
+    const danger = lead > 0.7;
+
+    // territory: cells left of knot are BLUE, right are RED — you watch your color eat the rope
+    let cells = "";
+    for (let i = 0; i < COLS; i++) {
+      const inGate = i < GATE || i >= COLS - GATE;
+      if (i === knot)      cells += `<span class="g">●</span>`;
+      else if (i < knot)   cells += `<span class="b${inGate ? ' blink' : ''}">${inGate ? '#' : '═'}</span>`;
+      else                 cells += `<span class="r${inGate ? ' blink' : ''}">${inGate ? '#' : '═'}</span>`;
+    }
+
+    const pl = puller("left", s.pos < 0 ? lead : 0);
+    const pr = puller("right", s.pos > 0 ? lead : 0);
+    scene.innerHTML =
+      `   <span class="b">◄ BLUE  ${String(s.wins.left).padStart(2,'0')}</span>` +
+      `          <span class="r">${String(s.wins.right).padStart(2,'0')}  RED ►</span>\n\n` +
+      `<span class="gate">‖</span>${cells}<span class="gate">‖</span>\n` +
+      `<span class="b">${pl}╾</span>` + " ".repeat(COLS - 4) + `<span class="r">╼${pr}</span>`;
+    scene.classList.toggle("danger", danger);
+
+    players.textContent = s.players + " people on the rope";
+
+    // live leader / danger readout
+    if (winner) {
+      winUntil = performance.now() + 1400;
+      winShown = winner === "left"
+        ? `<span class="b blink">&gt;&gt;&gt; BLUE TAKES THE ROPE &lt;&lt;&lt;</span>`
+        : `<span class="r blink">&gt;&gt;&gt; RED TAKES THE ROPE &lt;&lt;&lt;</span>`;
+    }
+    if (performance.now() < winUntil) {
+      status.innerHTML = winShown; // hold the win banner briefly
+    } else if (danger) {
+      status.innerHTML = s.pos < 0
+        ? `<span class="b blink">‼ BLUE ON THE BRINK ‼</span>`
+        : `<span class="r blink">‼ RED ON THE BRINK ‼</span>`;
+    } else if (Math.abs(s.pos) < 3) {
+      status.innerHTML = `<span style="color:#1c9c42">— dead even —</span>`;
+    } else {
+      const pct = Math.round(lead * 100);
+      status.innerHTML = s.pos < 0
+        ? `<span class="b">◄ BLUE leads ${pct}%</span>`
+        : `<span class="r">RED leads ${pct}% ►</span>`;
+    }
+  });
+</script>
