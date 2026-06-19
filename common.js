@@ -17,24 +17,20 @@ window.Rope = (() => {
   const tick = () => tone(flip++ % 2 ? 200 : 150, 0.04, "square", 0.04);
   const fanfare = () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.18, "triangle", 0.08, i * 0.1));
 
-  // ---- hold-to-pull: fire while pressed, throttled (one finger != a bot army) ----
-  let held = null;
+  // ---- tap-to-pull: one pull per discrete press/click/tap (no holding) ----
   let sid = "";   // session id issued by /stream; the server rejects pulls without it
-  const pull = () => { if (held && sid) { navigator.sendBeacon("/pull?side=" + held + "&s=" + sid); tick(); } };
-  setInterval(pull, 80);
-  for (const ev of ["pointerup", "pointercancel"]) addEventListener(ev, () => (held = null));
+  const pull = (side) => { if (sid) { navigator.sendBeacon("/pull?side=" + side + "&s=" + sid); tick(); } };
 
   function bindSides(leftEl, rightEl) {
     for (const [el, side] of [[leftEl, "left"], [rightEl, "right"]]) {
-      el.addEventListener("pointerdown", (e) => {
-        e.preventDefault(); audio().resume?.(); held = side; pull();
-        e.target.setPointerCapture?.(e.pointerId); // resizing edge under cursor can't fire pointerleave
-      });
+      el.addEventListener("pointerdown", (e) => { e.preventDefault(); audio().resume?.(); pull(side); });
     }
-    // ← / → arrow keys: hold to pull that side
+    // ← / → arrow keys: each press = one pull; e.repeat blocks OS key-repeat so holding does nothing
     const keySide = (k) => (k === "ArrowLeft" ? "left" : k === "ArrowRight" ? "right" : null);
-    addEventListener("keydown", (e) => { const s = keySide(e.key); if (s) { e.preventDefault(); audio().resume?.(); held = s; } });
-    addEventListener("keyup", (e) => { if (keySide(e.key) === held) held = null; });
+    addEventListener("keydown", (e) => {
+      const s = keySide(e.key);
+      if (s && !e.repeat) { e.preventDefault(); audio().resume?.(); pull(s); }
+    });
   }
 
   // render(state, winner) — winner is "left"|"right" the frame someone crosses an edge, else null.
